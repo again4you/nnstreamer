@@ -186,6 +186,30 @@ if not get_option('snpe-support').disabled()
   endif
 endif
 
+# tensorrt
+tensorrt_dep = dependency('', required: false)
+if not get_option('tensorrt-support').disabled()
+  cuda_vers = [
+    '11.0',
+    '10.2',
+  ]
+
+  foreach ver : cuda_vers
+    cuda_dep = dependency('cuda-' + ver, required: false)
+    cudart_dep = dependency('cudart-' + ver, required: false)
+    if cuda_dep.found() and cudart_dep.found()
+      break
+    endif
+  endforeach
+
+  nvinfer_lib = cxx.find_library('nvinfer', required: false)
+  nvinfer_dep = declare_dependency(dependencies: nvinfer_lib)
+
+  tensorrt_dep = declare_dependency(
+      dependencies: [ nvinfer_dep, cuda_dep, cudart_dep ]
+  )
+endif
+
 # features registration to be controlled
 #
 # register feature as follows
@@ -245,6 +269,9 @@ features = {
   },
   'protobuf-support': {
     'extra_deps': [ pb_comp ]
+  },
+  'tensorrt-support': {
+    'extra_deps': [ tensorrt_dep ]
   }
 }
 
