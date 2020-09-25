@@ -6,7 +6,7 @@
  */
 /**
  * @file   tensor_filter_tensorrt.cc
- * @date   06 May 2020
+ * @date   24 Sep 2020
  * @brief  Mediapipe module for tensor_filter gstreamer plugin
  * @see    http://github.com/nnstreamer/nnstreamer
  * @author Dongju Chae <dongju.chae@samsung.com>
@@ -31,6 +31,8 @@
 #include <cuda_runtime_api.h>
 
 using Severity = nvinfer1::ILogger::Severity;
+
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
 
 /** @brief a global object of ILogger */
 class Logger : public nvinfer1::ILogger
@@ -241,12 +243,24 @@ TensorRTCore::initTensorInfo(const GstTensorFilterProperties * prop)
     (int) _inputTensorMeta.info[0].dimension[0]
   };
 
+  ml_logw("SJ #1 Input Dim: %d %d %d %d", 
+    (int) _inputTensorMeta.info[0].dimension[3], 
+    (int) _inputTensorMeta.info[0].dimension[2], 
+    (int) _inputTensorMeta.info[0].dimension[1], 
+    (int) _inputTensorMeta.info[0].dimension[0]);
+
   _OutputDims = nvinfer1::Dims4 {
     (int) _outputTensorMeta.info[0].dimension[3],
     (int) _outputTensorMeta.info[0].dimension[2],
     (int) _outputTensorMeta.info[0].dimension[1],
     (int) _outputTensorMeta.info[0].dimension[0]
   };
+
+  ml_logw("SJ #2 Input Dim: %d %d %d %d", 
+    (int) _outputTensorMeta.info[0].dimension[3], 
+    (int) _outputTensorMeta.info[0].dimension[2], 
+    (int) _outputTensorMeta.info[0].dimension[1], 
+    (int) _outputTensorMeta.info[0].dimension[0]);
 
   if (setTensorType(_inputTensorMeta.info[0].type) != 0) {
     ml_loge ("TensorRT filter does not support the input data type.");
@@ -270,17 +284,28 @@ TensorRTCore::buildEngine()
     return -1;
   }
 
-  auto network = makeUnique(builder->createNetworkV2(0U));
+  ml_logw("SJ #3");
+
+  auto network = makeUnique(builder->createNetwork());
+#if 0
+  auto network = makeUnique(builder->createNetworkV2(
+        1U << static_cast<uint32_t>(
+          nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH)));
+#endif
   if (!network) {
     ml_loge ("Failed to create network");
     return -1;
   }
+  
+  ml_logw("SJ #4");
 
   auto config = makeUnique(builder->createBuilderConfig());
   if (!config) {
     ml_loge ("Failed to create config");
     return -1;
   }
+
+  ml_logw("SJ #5");
 
   auto parser = makeUnique(nvuffparser::createUffParser());
   if (!parser) {
@@ -289,14 +314,35 @@ TensorRTCore::buildEngine()
   }
 
   /* Register tensor input & output */
-  parser->registerInput("input",
+#if 0
+  parser->registerInput("in",
     _InputDims, nvuffparser::UffInputOrder::kNCHW);
-  parser->registerOutput("output");
+#endif
+
+  ml_logw("SJ #6");
+
+#if 1
+  parser->registerInput("in",
+    nvinfer1::Dims4(1, 1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
+  parser->registerOutput("out");
+#endif
+
+  ml_logw("SJ #7");
+
+#if 0
+  parser->registerInput("in",
+    nvinfer1::DimsCHW(1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
+  parser->registerOutput("out");
+#endif 
 
   /* Parse the imported model */
-  parser->parse (_uff_path, *network, _DataType);
+  // parser->parse (_uff_path, *network, _DataType);
+  parser->parse (_uff_path, *network, nvinfer1::DataType::kFLOAT);
+
+  ml_logw("SJ #8");
 
   /* Set config */
+  builder->setMaxBatchSize(1);
   config->setMaxWorkspaceSize(1 << 20);
   config->setFlag(nvinfer1::BuilderFlag::kGPU_FALLBACK);
 
@@ -327,13 +373,18 @@ int
 TensorRTCore::infer(const GstTensorMemory * input,
   GstTensorMemory * output)
 {
-  void * inputBuffer = nullptr;
+  void * inputBuffer;
+
+  if (allocBuffer (&inputBuffer, input->size) != 0) {
+    ml_loge ("Failed to allocate GPU memory for input");
+    return -1;
+  }
 
   /* Copy input data to Cuda memory space */
   memcpy (inputBuffer, input->data, input->size);
 
   /* Allocate output buffer */
-  if (!allocBuffer (&output->data, output->size)) {
+  if (allocBuffer (&output->data, output->size) != 0) {
     ml_loge ("Failed to allocate GPU memory for output");
     return -1;
   }
@@ -345,11 +396,15 @@ TensorRTCore::infer(const GstTensorMemory * input,
     return -1;
   }
 
+  ml_logw("SJ #13");
+
   /* wait for GPU to finish the inference */
   cudaDeviceSynchronize();
 
   /* cleanup Cuda memory for input */
   cudaFree (inputBuffer);
+
+  ml_logw("SJ #14");
 
   return 0;
 }
