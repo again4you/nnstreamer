@@ -287,11 +287,6 @@ TensorRTCore::buildEngine()
   ml_logw("SJ #3");
 
   auto network = makeUnique(builder->createNetwork());
-#if 0
-  auto network = makeUnique(builder->createNetworkV2(
-        1U << static_cast<uint32_t>(
-          nvinfer1::NetworkDefinitionCreationFlag::kEXPLICIT_BATCH)));
-#endif
   if (!network) {
     ml_loge ("Failed to create network");
     return -1;
@@ -323,17 +318,11 @@ TensorRTCore::buildEngine()
 
 #if 1
   parser->registerInput("in",
-    nvinfer1::Dims4(1, 1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
+    nvinfer1::Dims3(1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
   parser->registerOutput("out");
 #endif
 
   ml_logw("SJ #7");
-
-#if 0
-  parser->registerInput("in",
-    nvinfer1::DimsCHW(1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
-  parser->registerOutput("out");
-#endif 
 
   /* Parse the imported model */
   // parser->parse (_uff_path, *network, _DataType);
@@ -391,7 +380,7 @@ TensorRTCore::infer(const GstTensorMemory * input,
 
   /* Bind the input and execute the network */
   std::vector<void*> bindings = {inputBuffer, output->data};
-  if (!_Context->executeV2(bindings.data())) {
+  if (!_Context->execute(1, bindings.data())) {
     ml_loge ("Failed to execute the network");
     return -1;
   }
