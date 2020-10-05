@@ -100,11 +100,14 @@ private:
   nvinfer1::Dims _OutputDims;
   nvinfer1::DataType _DataType;
 
+  guint64 _input_dim;
+
   UniquePtr<nvinfer1::ICudaEngine> _Engine{nullptr};
   UniquePtr<nvinfer1::IExecutionContext> _Context{nullptr};
 
   int allocBuffer (void **buffer, gsize size);
   int setTensorType(tensor_type t);
+  void parseCustomOption (const GstTensorFilterProperties * prop);
 
   template <typename T>
   UniquePtr<T> makeUnique(T* t)
@@ -127,6 +130,9 @@ TensorRTCore::TensorRTCore (const char * uff_path)
 
   gst_tensors_info_init (&_inputTensorMeta);
   gst_tensors_info_init (&_outputTensorMeta);
+
+  /* Set as invalid dimension value */
+  _input_dim = 0;
 }
 
 /**
@@ -214,6 +220,32 @@ TensorRTCore::setTensorType(tensor_type t)
   return 0;
 }
 
+void
+TensorRTCore::parseCustomOption(const GstTensorFilterProperties * prop)
+{
+  if (prop->custom_properties) {
+    gchar **options;
+    guint len;
+
+    options = g_strsplit (prop->custom_properties, ",", -1);
+    len = g_strv_length (options);
+
+    for (guint i=0; i<len; ++i) {
+      gchar **option = g_strsplit (options[i], ":", -1);
+      if (g_strv_length (option) > 1) {
+        g_strstrip (option[0]);
+        g_strstrip (option[1]);
+
+        if (g_ascii_strcasecmp (option[0], "input_dim") == 0) {
+          _input_dim = g_ascii_strtoull (option[1], nullptr, 10);
+        }
+      }
+      g_strfreev (option);  
+    }
+    g_strfreev (options);
+  }
+}
+
 /**
  * @brief return UFF model file path
  * @return UFF model file path.
@@ -235,21 +267,38 @@ TensorRTCore::initTensorInfo(const GstTensorFilterProperties * prop)
   gst_tensors_info_copy (&_inputTensorMeta, &prop->input_meta);
   gst_tensors_info_copy (&_outputTensorMeta, &prop->output_meta);
 
-  /* TensorRT internally uses the NCHW format */
-  // TODO: Set as Input
-  _InputDims = nvinfer1::Dims4 {
-    (int) _inputTensorMeta.info[0].dimension[3],
-    (int) _inputTensorMeta.info[0].dimension[2],
-    (int) _inputTensorMeta.info[0].dimension[1],
-    (int) _inputTensorMeta.info[0].dimension[0]
-  };
+  /* Set Custom property */
+  parseCustomOption(prop);
 
-  _OutputDims = nvinfer1::Dims4 {
-    (int) _outputTensorMeta.info[0].dimension[3],
-    (int) _outputTensorMeta.info[0].dimension[2],
-    (int) _outputTensorMeta.info[0].dimension[1],
-    (int) _outputTensorMeta.info[0].dimension[0]
-  };
+  /*
+   * TensorRT supports 2, 3 and 4 dimensions of a tensor.
+   */
+  switch (_input_dim) {
+    case 2:
+      _InputDims = nvinfer1::Dims2(
+        (int) _inputTensorMeta.info[0].dimension[1],
+        (int) _inputTensorMeta.info[0].dimension[0]);
+      break;
+
+    case 3:
+    _InputDims = nvinfer1::Dims3(
+      (int) _inputTensorMeta.info[0].dimension[2],
+      (int) _inputTensorMeta.info[0].dimension[1],
+      (int) _inputTensorMeta.info[0].dimension[0]);
+      break;
+    
+    case 4:
+    _InputDims = nvinfer1::Dims4(
+      (int) _inputTensorMeta.info[0].dimension[3],
+      (int) _inputTensorMeta.info[0].dimension[2],
+      (int) _inputTensorMeta.info[0].dimension[1],
+      (int) _inputTensorMeta.info[0].dimension[0]);
+      break;
+
+    default:
+      ml_loge ("TensorRT filter does not support %lu dimension.", _input_dim);
+      return -1;
+  }
 
 #if 1
   ml_logw("SJ #1 Input Dim: %d %d %d %d", 
@@ -323,7 +372,7 @@ TensorRTCore::buildEngine()
 
 #if 1
 
-  _InputDims = nvinfer1::Dims3(1, 28, 28);
+  // _InputDims = nvinfer1::Dims3(1, 28, 28);
   parser->registerInput(_inputTensorMeta.info[0].name,
     _InputDims, nvuffparser::UffInputOrder::kNCHW);
   parser->registerOutput(_outputTensorMeta.info[0].name);
