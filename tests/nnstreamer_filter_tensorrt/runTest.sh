@@ -67,34 +67,23 @@ else
 fi
 
 PATH_TO_MODEL="../test_models/models/lenet5.uff"
-PATH_TO_DATA="../test_models/data/0.pgm"
+PATH_TO_DATA_1="../test_models/data/1.pgm"
+PATH_TO_DATA_9="../test_models/data/9.pgm"
 
-# Passed
-#gstTest "--gst-plugin-path=${PATH_TO_PLUGIN} filesrc location=${PATH_TO_DATA} ! image/x-portable-graymap,width=28,height=28,framerate=0/1 
-#    ! pnmdec ! video/x-raw,format=GRAY8 ! tensor_converter input-type=uint8 
-#    ! tensor_filter framework=tensorrt model=${PATH_TO_MODEL} input=28:28:1:1 inputtype=int8 inputname=input output=10:1:1:1 outputtype=int8 outputname=output
-#    ! filesink location=sj.out.log " 3 0 0 $PERFORMANCE
-
-
-#gstTest "-v --gst-plugin-path=${PATH_TO_PLUGIN} filesrc location=${PATH_TO_DATA} ! image/x-portable-graymap,width=28,height=28,framerate=0/1 
-#    ! pnmdec ! video/x-raw,format=GRAY8 ! tensor_converter input-type=uint8
-#    ! tensor_transform mode=arithmetic option=typecast:float32,div:255.0
-#    ! tensor_filter framework=tensorrt model=${PATH_TO_MODEL} input=28:28:1 inputtype=float32 inputname=in output=10:1:1:1 outputtype=float32 outputname=out
-#    ! filesink location=sj.out.log " 3 0 0 $PERFORMANCE
-
-
-#gstTest "-v --gst-plugin-path=${PATH_TO_PLUGIN} filesrc location=${PATH_TO_DATA} ! image/x-portable-graymap,width=28,height=28,framerate=0/1 
-#    ! pnmdec ! video/x-raw,format=GRAY8 ! tensor_converter input-type=uint8
-#    ! tensor_transform mode=transpose option=1:2:0:3 
-#    ! tensor_transform mode=arithmetic option=typecast:float32,div:255.0
-#    ! tensor_filter framework=tensorrt model=${PATH_TO_MODEL} input=28:28:1 inputtype=float32 inputname=in output=10:1:1:1 outputtype=float32 outputname=out
-#    ! filesink location=sj.out.log " 3 0 0 $PERFORMANCE
-
-gstTest "-v --gst-plugin-path=${PATH_TO_PLUGIN} filesrc location=${PATH_TO_DATA} ! image/x-portable-graymap,width=28,height=28,framerate=0/1 
+gstTest "-v --gst-plugin-path=${PATH_TO_PLUGIN} filesrc location=${PATH_TO_DATA_1} ! image/x-portable-graymap,width=28,height=28,framerate=0/1 
     ! pnmdec ! video/x-raw,format=GRAY8 ! tensor_converter input-type=uint8
     ! tensor_transform mode=transpose option=1:2:0:3 
     ! tensor_transform mode=arithmetic option=typecast:float32,div:-255.0,add:1 
-    ! tensor_filter framework=tensorrt model=${PATH_TO_MODEL} input=28:28:1 inputtype=float32 inputname=in output=10:1:1:1 outputtype=float32 outputname=out
-    ! filesink location=sj.out.log " 3 0 0 $PERFORMANCE
+    ! tensor_filter framework=tensorrt model=${PATH_TO_MODEL} input=28:28:1 inputtype=float32 custom=input_dim:3 inputname=in output=10:1:1:1 outputtype=float32 outputname=out
+    ! filesink location=sj.out.log " 1 0 0 $PERFORMANCE
+python CheckMnist.py ./sj.out.log 1
+testResult $? 1 "Golden test comparison" 0 1
 
-echo "Done!"
+gstTest "-v --gst-plugin-path=${PATH_TO_PLUGIN} filesrc location=${PATH_TO_DATA_9} ! image/x-portable-graymap,width=28,height=28,framerate=0/1 
+    ! pnmdec ! video/x-raw,format=GRAY8 ! tensor_converter input-type=uint8
+    ! tensor_transform mode=transpose option=1:2:0:3 
+    ! tensor_transform mode=arithmetic option=typecast:float32,div:-255.0,add:1 
+    ! tensor_filter framework=tensorrt model=${PATH_TO_MODEL} input=28:28:1 inputtype=float32 custom=input_dim:3 inputname=in output=10:1:1:1 outputtype=float32 outputname=out
+    ! filesink location=sj.out.log " 2 0 0 $PERFORMANCE
+python CheckMnist.py ./sj.out.log 9
+testResult $? 2 "Golden test comparison" 0 1
