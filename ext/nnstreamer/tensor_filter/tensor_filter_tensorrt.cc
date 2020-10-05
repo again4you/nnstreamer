@@ -236,18 +236,13 @@ TensorRTCore::initTensorInfo(const GstTensorFilterProperties * prop)
   gst_tensors_info_copy (&_outputTensorMeta, &prop->output_meta);
 
   /* TensorRT internally uses the NCHW format */
+  // TODO: Set as Input
   _InputDims = nvinfer1::Dims4 {
     (int) _inputTensorMeta.info[0].dimension[3],
     (int) _inputTensorMeta.info[0].dimension[2],
     (int) _inputTensorMeta.info[0].dimension[1],
     (int) _inputTensorMeta.info[0].dimension[0]
   };
-
-  ml_logw("SJ #1 Input Dim: %d %d %d %d", 
-    (int) _inputTensorMeta.info[0].dimension[3], 
-    (int) _inputTensorMeta.info[0].dimension[2], 
-    (int) _inputTensorMeta.info[0].dimension[1], 
-    (int) _inputTensorMeta.info[0].dimension[0]);
 
   _OutputDims = nvinfer1::Dims4 {
     (int) _outputTensorMeta.info[0].dimension[3],
@@ -256,11 +251,19 @@ TensorRTCore::initTensorInfo(const GstTensorFilterProperties * prop)
     (int) _outputTensorMeta.info[0].dimension[0]
   };
 
-  ml_logw("SJ #2 Input Dim: %d %d %d %d", 
+#if 1
+  ml_logw("SJ #1 Input Dim: %d %d %d %d", 
+    (int) _inputTensorMeta.info[0].dimension[3], 
+    (int) _inputTensorMeta.info[0].dimension[2], 
+    (int) _inputTensorMeta.info[0].dimension[1], 
+    (int) _inputTensorMeta.info[0].dimension[0]);
+
+  ml_logw("SJ #2 Output Dim: %d %d %d %d", 
     (int) _outputTensorMeta.info[0].dimension[3], 
     (int) _outputTensorMeta.info[0].dimension[2], 
     (int) _outputTensorMeta.info[0].dimension[1], 
     (int) _outputTensorMeta.info[0].dimension[0]);
+#endif
 
   if (setTensorType(_inputTensorMeta.info[0].type) != 0) {
     ml_loge ("TensorRT filter does not support the input data type.");
@@ -284,23 +287,17 @@ TensorRTCore::buildEngine()
     return -1;
   }
 
-  ml_logw("SJ #3");
-
   auto network = makeUnique(builder->createNetwork());
   if (!network) {
     ml_loge ("Failed to create network");
     return -1;
   }
-  
-  ml_logw("SJ #4");
 
   auto config = makeUnique(builder->createBuilderConfig());
   if (!config) {
     ml_loge ("Failed to create config");
     return -1;
   }
-
-  ml_logw("SJ #5");
 
   auto parser = makeUnique(nvuffparser::createUffParser());
   if (!parser) {
@@ -309,26 +306,31 @@ TensorRTCore::buildEngine()
   }
 
   /* Register tensor input & output */
-#if 0
-  parser->registerInput("in",
-    _InputDims, nvuffparser::UffInputOrder::kNCHW);
-#endif
-
   ml_logw("SJ #6");
 
-#if 1
+#if 0
+  parser->registerInput("in",
+    nvinfer1::Dims4(1, 1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
+  parser->registerOutput("out");
+#endif
+
+#if 0
+  /* Sucess version */
   parser->registerInput("in",
     nvinfer1::Dims3(1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
   parser->registerOutput("out");
 #endif
 
-  ml_logw("SJ #7");
+#if 1
+
+  _InputDims = nvinfer1::Dims3(1, 28, 28);
+  parser->registerInput(_inputTensorMeta.info[0].name,
+    _InputDims, nvuffparser::UffInputOrder::kNCHW);
+  parser->registerOutput(_outputTensorMeta.info[0].name);
+#endif
 
   /* Parse the imported model */
-  // parser->parse (_uff_path, *network, _DataType);
-  parser->parse (_uff_path, *network, nvinfer1::DataType::kFLOAT);
-
-  ml_logw("SJ #8");
+  parser->parse (_uff_path, *network, _DataType);
 
   /* Set config */
   builder->setMaxBatchSize(1);
@@ -385,15 +387,11 @@ TensorRTCore::infer(const GstTensorMemory * input,
     return -1;
   }
 
-  ml_logw("SJ #13");
-
   /* wait for GPU to finish the inference */
   cudaDeviceSynchronize();
 
   /* cleanup Cuda memory for input */
   cudaFree (inputBuffer);
-
-  ml_logw("SJ #14");
 
   return 0;
 }
