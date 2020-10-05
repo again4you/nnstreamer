@@ -92,6 +92,7 @@ public:
 
 private:
   char * _uff_path;
+  void * _inputBuffer;
 
   GstTensorsInfo _inputTensorMeta;
   GstTensorsInfo _outputTensorMeta;
@@ -127,6 +128,7 @@ void fini_filter_tensorrt (void) __attribute__ ((destructor));
 TensorRTCore::TensorRTCore (const char * uff_path)
 {
   _uff_path = g_strdup (uff_path);
+  _inputBuffer = nullptr;
 
   gst_tensors_info_init (&_inputTensorMeta);
   gst_tensors_info_init (&_outputTensorMeta);
@@ -143,6 +145,9 @@ TensorRTCore::~TensorRTCore ()
 {
   gst_tensors_info_free (&_inputTensorMeta);
   gst_tensors_info_free (&_outputTensorMeta);
+
+  /* cleanup Cuda memory for input */
+  cudaFree (_inputBuffer);
 
   g_free (_uff_path);
 }
@@ -300,20 +305,6 @@ TensorRTCore::initTensorInfo(const GstTensorFilterProperties * prop)
       return -1;
   }
 
-#if 1
-  ml_logw("SJ #1 Input Dim: %d %d %d %d", 
-    (int) _inputTensorMeta.info[0].dimension[3], 
-    (int) _inputTensorMeta.info[0].dimension[2], 
-    (int) _inputTensorMeta.info[0].dimension[1], 
-    (int) _inputTensorMeta.info[0].dimension[0]);
-
-  ml_logw("SJ #2 Output Dim: %d %d %d %d", 
-    (int) _outputTensorMeta.info[0].dimension[3], 
-    (int) _outputTensorMeta.info[0].dimension[2], 
-    (int) _outputTensorMeta.info[0].dimension[1], 
-    (int) _outputTensorMeta.info[0].dimension[0]);
-#endif
-
   if (setTensorType(_inputTensorMeta.info[0].type) != 0) {
     ml_loge ("TensorRT filter does not support the input data type.");
     return -1;
@@ -355,28 +346,9 @@ TensorRTCore::buildEngine()
   }
 
   /* Register tensor input & output */
-  ml_logw("SJ #6");
-
-#if 0
-  parser->registerInput("in",
-    nvinfer1::Dims4(1, 1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
-  parser->registerOutput("out");
-#endif
-
-#if 0
-  /* Sucess version */
-  parser->registerInput("in",
-    nvinfer1::Dims3(1, 28, 28), nvuffparser::UffInputOrder::kNCHW);
-  parser->registerOutput("out");
-#endif
-
-#if 1
-
-  // _InputDims = nvinfer1::Dims3(1, 28, 28);
   parser->registerInput(_inputTensorMeta.info[0].name,
     _InputDims, nvuffparser::UffInputOrder::kNCHW);
   parser->registerOutput(_outputTensorMeta.info[0].name);
-#endif
 
   /* Parse the imported model */
   parser->parse (_uff_path, *network, _DataType);
@@ -413,15 +385,16 @@ int
 TensorRTCore::infer(const GstTensorMemory * input,
   GstTensorMemory * output)
 {
-  void * inputBuffer;
-
-  if (allocBuffer (&inputBuffer, input->size) != 0) {
-    ml_loge ("Failed to allocate GPU memory for input");
-    return -1;
+  /* If internal _inputBuffer is NULL, tne allocate GPU memory */
+  if (!_inputBuffer) {
+    if (allocBuffer (&_inputBuffer, input->size) != 0) {
+      ml_loge ("Failed to allocate GPU memory for input");
+      return -1;
+    }
   }
 
   /* Copy input data to Cuda memory space */
-  memcpy (inputBuffer, input->data, input->size);
+  memcpy (_inputBuffer, input->data, input->size);
 
   /* Allocate output buffer */
   if (allocBuffer (&output->data, output->size) != 0) {
@@ -430,7 +403,7 @@ TensorRTCore::infer(const GstTensorMemory * input,
   }
 
   /* Bind the input and execute the network */
-  std::vector<void*> bindings = {inputBuffer, output->data};
+  std::vector<void*> bindings = {_inputBuffer, output->data};
   if (!_Context->execute(1, bindings.data())) {
     ml_loge ("Failed to execute the network");
     return -1;
@@ -438,9 +411,6 @@ TensorRTCore::infer(const GstTensorMemory * input,
 
   /* wait for GPU to finish the inference */
   cudaDeviceSynchronize();
-
-  /* cleanup Cuda memory for input */
-  cudaFree (inputBuffer);
 
   return 0;
 }
