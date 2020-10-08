@@ -106,6 +106,9 @@ enum
   PROP_INPUTTYPE,
   PROP_INPUTNAME,
   PROP_INPUTLAYOUT,
+#if 1
+  PROP_INPUTRANKS,
+#endif
   PROP_OUTPUT,
   PROP_OUTPUTTYPE,
   PROP_OUTPUTNAME,
@@ -128,6 +131,15 @@ gst_tensors_layout_init (tensors_layout layout)
 
   for (i = 0; i < NNS_TENSOR_SIZE_LIMIT; i++) {
     layout[i] = _NNS_LAYOUT_ANY;
+  }
+}
+
+static void
+gst_tensors_rank_init (unsigned int input_ranks[])
+{
+  int i;
+  for (i = 0; i < NNS_TENSOR_SIZE_LIMIT; ++i) {
+    input_ranks[i] = 0;
   }
 }
 
@@ -205,6 +217,37 @@ gst_tensors_parse_layouts_string (tensors_layout layout,
 
   return num_layouts;
 }
+
+#if 1
+static guint
+gst_tensors_parse_rank_string (unsigned int input_ranks[],
+    const gchar * rank_string)
+{
+  guint num_ranks = 0;
+  guint i;
+
+  g_return_val_if_fail (input_ranks != NULL, 0);
+
+  if (rank_string) {
+    gchar ** str_rank_list;
+
+    str_rank_list = g_strsplit_set (rank_string, ",.", -1);
+    num_ranks = g_strv_length(str_rank_list);
+
+    if (num_ranks > NNS_TENSOR_SIZE_LIMIT) {
+      GST_WARNING ("Invalid param, rank (%d) max (%d)\n",
+          num_ranks, NNS_TENSOR_SIZE_LIMIT);
+      num_ranks = NNS_TENSOR_SIZE_LIMIT;
+    }
+
+    for (i=0; i < num_ranks; ++i) {
+      input_ranks[i] = (guint) g_ascii_strtoull (str_rank_list[i], NULL, 10);
+    }
+    g_strfreev (str_rank_list);
+  }
+  return num_ranks;
+}
+#endif
 
 /**
  * @brief Get layout string of tensor layout.
@@ -375,6 +418,7 @@ gst_tensor_filter_properties_init (GstTensorFilterProperties * prop)
   prop->input_configured = FALSE;
   gst_tensors_info_init (&prop->input_meta);
   gst_tensors_layout_init (prop->input_layout);
+  gst_tensors_rank_init (prop->input_ranks);
 
   prop->output_configured = FALSE;
   gst_tensors_info_init (&prop->output_meta);
@@ -681,6 +725,12 @@ gst_tensor_filter_install_properties (GObjectClass * gobject_class)
           "Set channel first (NCHW) or channel last layout (NHWC) or None for input data. "
           "Layout of the data can be any or NHWC or NCHW or none for now. ",
           "", G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+#if 1
+  g_object_class_install_property (gobject_class, PROP_INPUTRANKS,
+      g_param_spec_string ("inputranks", "Rank of Input Tensor",
+          "The Rank of the Input Tensor, which is separated with ',' in case of multiple Tensors",
+          "", G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
+#endif
   g_object_class_install_property (gobject_class, PROP_OUTPUTNAME,
       g_param_spec_string ("outputname", "Name of Output Tensor",
           "The Name of Output Tensor", "",
@@ -1192,6 +1242,37 @@ _gtfc_setprop_OUTPUT (GstTensorFilterPrivate * priv,
   return 0;
 }
 
+#if 1
+static gint
+_gtfc_setprop_INPUTRANKS (GstTensorFilterPrivate * priv,
+    GstTensorFilterProperties * prop, const GValue * value)
+{
+  guint num_ranks;
+  guint i;
+
+  if (!prop->input_configured && value) {
+    num_ranks = gst_tensors_parse_rank_string (prop->input_ranks,
+        g_value_get_string (value));
+    if (num_ranks > 0) {
+      if (prop->input_meta.num_tensors > 0 &&
+          prop->input_meta.num_tensors < num_ranks) {
+        ml_logw ("Invalid input-rank, # of ranks(%d) is bigger than # of tensors(%d) so remaining values are ignored",
+            num_ranks, prop->input_meta.num_tensors);
+
+        for (i = prop->input_meta.num_tensors; i < NNS_TENSOR_SIZE_LIMIT; ++i) {
+          prop->input_ranks[i] = 0;
+        }
+      }
+    }
+  } else if (value) {
+    /** Once configured, it cannot be changed in runtime for now */
+    ml_loge
+        ("Cannot change then input-rank once the element/pipeline is configured.");
+  }
+  return 0;
+}
+#endif
+
 /** @brief Handle "PROP_INPUTTYPE" for set-property */
 static gint
 _gtfc_setprop_INPUTTYPE (GstTensorFilterPrivate * priv,
@@ -1610,6 +1691,9 @@ gst_tensor_filter_common_set_property (GstTensorFilterPrivate * priv,
       break;
     case PROP_OUTPUTLAYOUT:
       status = _gtfc_setprop_OUTPUTLAYOUT (priv, prop, value);
+      break;
+    case PROP_INPUTRANKS:
+      status = _gtfc_setprop_INPUTRANKS (priv, prop, value);
       break;
     case PROP_LATENCY:
       status = _gtfc_setprop_LATENCY (priv, prop, value);
