@@ -4328,6 +4328,50 @@ TEST (test_tensor_filter, framework_auto_ext_pt_pytorch_disabled_n)
 }
 #endif /* ENABLE_PYTORCH */
 
+
+#if 1
+// TEST (test_tensor_filter, reopen_tflite_01_p)
+// TEST (test_tensor_filter, reload_tflite_same_model_wrong_dims_n)
+// TEST (tensor_stream_test, mux_properties_1)
+TEST (test_tensor_filter, property_rank_01_p)
+{
+  gchar *test_model, *str_launch_line;
+  GstElement *gstpipe;
+
+  // const gchar fw_name[] = "tensorflow-lite";
+  GET_MODEL_PATH (mobilenet_v1_1.0_224_quant.tflite)
+
+  str_launch_line = g_strdup_printf
+  ("appsrc name=appsrc caps=application/octet-stream ! "
+          "tensor_converter input-dim=1:10 input-type=uint8 ! "
+          "tensor_filter name=tfilter framework=custom-easy model=safe_memcpy_10x10 inputtype=uint8 ! "
+          "tensor_sink name=test_sink");
+#if 0
+  str_launch_line = g_strdup_printf ("videotestsrc ! videoconvert ! videoscale ! videorate ! \
+      video/x-raw,format=RGB,width=224,height=224 ! tensor_converter ! \
+      tensor_filter name=tfilter framework=auto model=%s input:28:28:1  inputtype=float32 inputrank=3 ! tensor_sink", test_model);
+#endif
+  gstpipe = gst_parse_launch (str_launch_line, NULL);
+  g_free (str_launch_line);
+  EXPECT_TRUE (gstpipe != nullptr);
+
+  GstElement *filter;
+  gchar *prop_string;
+  filter = gst_bin_get_by_name (GST_BIN (gstpipe), "tfilter");
+  EXPECT_NE (filter, nullptr);
+  g_object_get (filter, "inputtype", &prop_string, NULL);
+  EXPECT_STREQ (prop_string, "uint8");
+
+  g_free (prop_string);
+  g_free (test_model);
+
+  gst_object_unref (filter);
+  gst_object_unref (gstpipe);
+
+  // TEST_TENSOR_FILTER_AUTO_OPTION_P (gstpipe, fw_name)
+}
+#endif
+
 /**
  * @brief Main function for unit test.
  */
