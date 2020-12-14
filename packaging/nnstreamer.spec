@@ -72,7 +72,7 @@
 %endif
 
 # Disable NNFW if it's not ARM/x64 (Since Tizen6, it supports x64)
-%ifnarch %arm aarch64 x86_64
+%ifnarch %arm aarch64 x86_64 i586 i686 %ix86
 %define		nnfw_support 0
 %endif
 
